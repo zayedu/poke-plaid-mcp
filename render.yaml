@@ -8,7 +8,10 @@ services:
     region: oregon
     plan: free
     branch: main
-    buildCommand: npm ci && npm run build
+    # --include=dev keeps TypeScript/@types available for the build even though
+    # NODE_ENV=production (Render sets it during the build too, which otherwise
+    # prunes devDependencies and breaks `tsc`).
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeployTrigger: commit
