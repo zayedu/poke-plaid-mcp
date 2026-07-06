@@ -53,11 +53,24 @@ const port = int("PORT", 3000);
 // Default to loopback so a local install is never exposed to the LAN. Hosted
 // deployments (Docker/Render/etc.) must set HOST=0.0.0.0 explicitly.
 const host = str("HOST", "127.0.0.1");
-const publicBaseUrl = str("PUBLIC_BASE_URL", `http://localhost:${port}`).replace(/\/+$/, "");
+// Prefer an explicit PUBLIC_BASE_URL, then Render's injected RENDER_EXTERNAL_URL,
+// then localhost. This keeps the Host/Origin allowlist correct on hosted platforms
+// without any manual configuration.
+const publicBaseUrl = (str("PUBLIC_BASE_URL") || str("RENDER_EXTERNAL_URL") || `http://localhost:${port}`).replace(
+  /\/+$/,
+  "",
+);
 
 const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"];
 const allowedHosts = [
-  ...new Set([...LOOPBACK_HOSTS, hostnameOf(publicBaseUrl), ...list("ALLOWED_HOSTS")].filter(Boolean) as string[]),
+  ...new Set(
+    [
+      ...LOOPBACK_HOSTS,
+      hostnameOf(publicBaseUrl),
+      str("RENDER_EXTERNAL_HOSTNAME") || undefined,
+      ...list("ALLOWED_HOSTS"),
+    ].filter(Boolean) as string[],
+  ),
 ];
 const allowedOrigins = [
   ...new Set(
