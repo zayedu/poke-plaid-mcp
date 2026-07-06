@@ -5,7 +5,7 @@ import { config } from "../config.js";
 import { log } from "../logger.js";
 import { getProvider } from "../providers/index.js";
 import { createLinkToken, exchangePublicToken, extractPlaidError } from "../providers/plaid.js";
-import { removeItem } from "../store.js";
+import { listItems, removeItem } from "../store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // setup.html lives in src/public; after build it is copied next to dist/routes.
@@ -83,6 +83,25 @@ export function linkRouter(): Router {
     }
     const removed = await removeItem(itemId);
     res.json({ removed });
+  });
+
+  // Returns linked items as PLAID_ITEMS JSON for copying into Render env (survives
+  // ephemeral disk). Protected by the same setup token as other /setup routes.
+  router.get("/setup/export-seed", async (_req: Request, res: Response) => {
+    if (!requirePlaid(res)) return;
+    try {
+      const items = await listItems();
+      const seed = items.map(({ itemId, institution, institutionId, linkedAt, accessToken }) => ({
+        itemId,
+        institution,
+        ...(institutionId ? { institutionId } : {}),
+        accessToken,
+        linkedAt,
+      }));
+      res.json({ plaidItems: JSON.stringify(seed) });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
   });
 
   return router;
