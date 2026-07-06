@@ -82,10 +82,26 @@ async function writeFile(store: StoreFile): Promise<void> {
 
 export async function listItems(): Promise<StoredItem[]> {
   const store = await readFile();
-  const items: StoredItem[] = [];
+  const byId = new Map<string, StoredItem>();
+
+  // Seed items from the PLAID_ITEMS env var first. These persist across an
+  // ephemeral filesystem (e.g. Render's free tier) where the on-disk store is
+  // wiped on every restart/deploy. Access tokens arrive as plaintext (kept in
+  // the platform's secret env store) and live in memory only.
+  for (const s of config.storage.seedItems) {
+    byId.set(s.itemId, {
+      itemId: s.itemId,
+      institution: s.institution,
+      institutionId: s.institutionId,
+      linkedAt: s.linkedAt ?? "seeded",
+      accessToken: s.accessToken,
+    });
+  }
+
+  // Items linked at runtime (on disk) take precedence over seeds of the same id.
   for (const it of store.items) {
     try {
-      items.push({ ...it, accessToken: decrypt(it.accessToken) });
+      byId.set(it.itemId, { ...it, accessToken: decrypt(it.accessToken) });
     } catch (err) {
       log.error("Failed to decrypt a stored item (wrong TOKEN_ENCRYPTION_KEY?)", {
         itemId: it.itemId,
@@ -93,7 +109,8 @@ export async function listItems(): Promise<StoredItem[]> {
       });
     }
   }
-  return items;
+
+  return [...byId.values()];
 }
 
 export async function upsertItem(item: StoredItem): Promise<void> {

@@ -3,6 +3,17 @@ import "dotenv/config";
 export type PlaidEnvName = "sandbox" | "production";
 export type ProviderKind = "plaid" | "mock";
 
+// A linked Plaid Item supplied via the PLAID_ITEMS env var. This lets tokens
+// survive an ephemeral filesystem (e.g. Render's free tier), where anything
+// written to ./data is wiped on every restart/deploy/spin-down.
+export interface SeedItem {
+  itemId: string;
+  institution: string;
+  institutionId?: string;
+  accessToken: string;
+  linkedAt?: string;
+}
+
 function str(name: string, fallback = ""): string {
   const v = process.env[name];
   return v === undefined || v === null ? fallback : v.trim();
@@ -36,6 +47,39 @@ function hostnameOf(url: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+// Parse PLAID_ITEMS: a JSON array of linked items (with plaintext access tokens,
+// stored safely in the platform's secret env store). Invalid entries are skipped.
+function parseSeedItems(raw: string): SeedItem[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.error("[config] PLAID_ITEMS is not valid JSON — ignoring it.");
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    console.error("[config] PLAID_ITEMS must be a JSON array — ignoring it.");
+    return [];
+  }
+  const items: SeedItem[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const itemId = typeof e.itemId === "string" ? e.itemId : undefined;
+    const accessToken = typeof e.accessToken === "string" ? e.accessToken : undefined;
+    if (!itemId || !accessToken) continue;
+    items.push({
+      itemId,
+      accessToken,
+      institution: typeof e.institution === "string" ? e.institution : "Linked institution",
+      institutionId: typeof e.institutionId === "string" ? e.institutionId : undefined,
+      linkedAt: typeof e.linkedAt === "string" ? e.linkedAt : undefined,
+    });
+  }
+  return items;
 }
 
 const plaidClientId = str("PLAID_CLIENT_ID");
@@ -106,6 +150,7 @@ export interface AppConfig {
   storage: {
     tokenStorePath: string;
     encryptionKey: string;
+    seedItems: SeedItem[];
   };
 }
 
@@ -132,6 +177,7 @@ export const config: AppConfig = {
   storage: {
     tokenStorePath: str("TOKEN_STORE_PATH", "./data/items.json"),
     encryptionKey: str("TOKEN_ENCRYPTION_KEY"),
+    seedItems: parseSeedItems(str("PLAID_ITEMS")),
   },
 };
 
