@@ -146,6 +146,7 @@ export interface AppConfig {
     products: string[];
     countryCodes: string[];
     appName: string;
+    redirectUri: string;
   };
   storage: {
     tokenStorePath: string;
@@ -173,6 +174,9 @@ export const config: AppConfig = {
     products: list("PLAID_PRODUCTS", ["investments"]),
     countryCodes: list("PLAID_COUNTRY_CODES", ["US", "CA"]),
     appName: str("PLAID_APP_NAME", "Poke Portfolio"),
+    // Required for OAuth institutions (Wealthsimple). Register this exact URL in
+    // Plaid Dashboard → Team Settings → API → Allowed redirect URIs.
+    redirectUri: str("PLAID_REDIRECT_URI", `${publicBaseUrl}/setup`),
   },
   storage: {
     tokenStorePath: str("TOKEN_STORE_PATH", "./data/items.json"),

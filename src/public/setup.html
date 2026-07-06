@@ -124,8 +124,12 @@
       let status = null;
 
       // When the server is protected by SETUP_TOKEN, it is passed as ?token=… and
-      // forwarded on every request via the x-setup-token header.
-      const SETUP_TOKEN = new URLSearchParams(location.search).get("token") || "";
+      // forwarded on every request via the x-setup-token header. Persist it so
+      // OAuth redirects (which drop query params) still work.
+      const urlToken = new URLSearchParams(location.search).get("token") || "";
+      if (urlToken) sessionStorage.setItem("setup_token", urlToken);
+      const SETUP_TOKEN = urlToken || sessionStorage.getItem("setup_token") || "";
+      const isOAuthRedirect = location.search.includes("oauth_state_id=");
       function withAuth(init) {
         const opts = init ? { ...init } : {};
         opts.headers = { ...(opts.headers || {}) };
@@ -201,13 +205,19 @@
       async function connect() {
         $("connect").disabled = true;
         try {
-          const res = await fetch("/setup/link-token", withAuth({ method: "POST" }));
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Failed to create link token");
+          let linkToken = sessionStorage.getItem("link_token");
+          if (!linkToken) {
+            const res = await fetch("/setup/link-token", withAuth({ method: "POST" }));
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Failed to create link token");
+            linkToken = data.linkToken;
+            sessionStorage.setItem("link_token", linkToken);
+          }
 
-          const handler = Plaid.create({
-            token: data.linkToken,
+          const handlerConfig = {
+            token: linkToken,
             onSuccess: async (publicToken, metadata) => {
+              sessionStorage.removeItem("link_token");
               const ex = await fetch("/setup/exchange", withAuth({
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -219,13 +229,20 @@
               const exData = await ex.json();
               if (!ex.ok) { toast("Error: " + (exData.error || "exchange failed")); return; }
               toast("Linked " + (exData.institution || "account") + " ✓");
+              history.replaceState({}, "", location.pathname + (SETUP_TOKEN ? "?token=" + encodeURIComponent(SETUP_TOKEN) : ""));
               loadStatus();
             },
             onExit: (err) => {
               if (err) toast("Plaid Link exited: " + (err.display_message || err.error_message || err.error_code));
             },
-          });
-          handler.open();
+          };
+          if (isOAuthRedirect) {
+            handlerConfig.receivedRedirectUri = window.location.href;
+          }
+
+          const handler = Plaid.create(handlerConfig);
+          if (isOAuthRedirect) handler.open();
+          else handler.open();
         } catch (e) {
           toast("Error: " + e.message);
         } finally {
@@ -234,7 +251,9 @@
       }
 
       $("connect").onclick = connect;
-      loadStatus();
+      loadStatus().then(() => {
+        if (isOAuthRedirect) connect();
+      });
     </script>
   </body>
 </html>

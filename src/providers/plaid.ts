@@ -362,6 +362,8 @@ export async function createLinkToken(): Promise<string> {
     language: "en",
     products: toProducts(config.plaid.products),
     country_codes: toCountryCodes(config.plaid.countryCodes),
+    // Wealthsimple and other OAuth institutions require a registered redirect URI.
+    ...(config.plaid.env === "production" ? { redirect_uri: config.plaid.redirectUri } : {}),
   });
   return res.data.link_token;
 }
